@@ -1,0 +1,19 @@
+# deps / build
+node_modules/
+dist/
+cache/
+artifacts/
+typechain-types/
+coverage/
+
+# secrets — never commit
+.env
+*service-account*.json
+
+# local data & logs
+backend/src/data/*.local.json
+*.log
+
+# editor
+.DS_Store
+.vscode/
