@@ -19,6 +19,9 @@ export interface AppConfig {
   amoyRpcUrl?: string;
   deployerPrivateKey?: string;
   contractAddress?: string;
+  /** Optional gas-price cap (gwei) for chain writes — Amoy RPCs suggest
+   * 200+ gwei tips while validators accept ~25-30; see .env.example. */
+  gasPriceGwei?: number;
   polygonscanApiKey?: string;
 
   dataBackend: DataBackend;
@@ -108,6 +111,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     amoyRpcUrl: source.AMOY_RPC_URL,
     deployerPrivateKey: source.DEPLOYER_PRIVATE_KEY,
     contractAddress: source.CONTRACT_ADDRESS,
+    gasPriceGwei: source.AMOY_GAS_PRICE_GWEI
+      ? requirePositiveInt("AMOY_GAS_PRICE_GWEI", source.AMOY_GAS_PRICE_GWEI, 30)
+      : undefined,
     polygonscanApiKey: source.POLYGONSCAN_API_KEY,
 
     dataBackend: dataBackendRaw,

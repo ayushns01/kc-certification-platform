@@ -76,6 +76,26 @@ Deploy to Amoy: set `AMOY_RPC_URL`, `DEPLOYER_PRIVATE_KEY` (a throwaway,
 faucet-funded key) in `.env`, then `npm run deploy:amoy` — the script
 auto-verifies on Polygonscan when `POLYGONSCAN_API_KEY` is set.
 
+## Live Amoy Testnet Deployment
+
+Deployed and exercised on Polygon Amoy (chainId 80002):
+
+| | |
+|---|---|
+| **Contract** | [`0xB05278D719c03D48be45A2Fe16b800EE3C5efB03`](https://amoy.polygonscan.com/address/0xB05278D719c03D48be45A2Fe16b800EE3C5efB03) |
+| **Deploy tx** | [`0x09694f…bdae2`](https://amoy.polygonscan.com/tx/0x09694f284c3d90ec870cfe5fd60fc4e471b5714a0f0cc74fd478d4539f1bdae2) |
+| **Token 1 — Participation cert** (auto-minted on approval) | [`0x5904cf…8989f`](https://amoy.polygonscan.com/tx/0x5904cfcae279cef01a1cec763c688883e1fdd5cfda3f4477baed2fa17438989f) |
+| **Token 2 — Graded evaluation cert** (marks 87 → grade A) | [`0x621ff4…16973`](https://amoy.polygonscan.com/tx/0x621ff446652bc6348e886f1eaf7b93686e8dd0670858c1829b45ddce85816973) |
+
+Both tokens verify **VALID** through `/verify/:certId` (run the backend
+locally against Amoy per `.env.example` — the on-chain hash anchors are
+public; the verification page recomputes and compares them live).
+Deployment record: [deployments/amoy.json](deployments/amoy.json).
+
+> Gas note: Amoy RPC fee suggestions spike to 200+ gwei tips while
+> validators accept ~30 gwei — `AMOY_GAS_PRICE_GWEI=30` caps writes so a
+> single faucet grant covers deploy + mints (see `.env.example`).
+
 ## Future Work (deliberately out of scope)
 
 - **W3C Verifiable Credentials companion** — for wallet-portable credentials

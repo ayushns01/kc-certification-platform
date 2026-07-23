@@ -38,7 +38,12 @@ async function main(): Promise<void> {
   });
   await repo.ensureSheetStructure();
 
-  const chainClient = new EthersChainClient(config.amoyRpcUrl, config.deployerPrivateKey, config.contractAddress);
+  const chainClient = new EthersChainClient(
+    config.amoyRpcUrl,
+    config.deployerPrivateKey,
+    config.contractAddress,
+    config.gasPriceGwei,
+  );
 
   // Same crash-recovery pass the API server runs: heal records whose mint
   // landed on-chain but whose write-back was lost.

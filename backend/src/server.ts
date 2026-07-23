@@ -31,7 +31,7 @@ function buildChainClient(config: AppConfig): IChainClient {
       "Chain client requires AMOY_RPC_URL (or local RPC URL), DEPLOYER_PRIVATE_KEY, and CONTRACT_ADDRESS to be set",
     );
   }
-  return new EthersChainClient(config.amoyRpcUrl, config.deployerPrivateKey, config.contractAddress);
+  return new EthersChainClient(config.amoyRpcUrl, config.deployerPrivateKey, config.contractAddress, config.gasPriceGwei);
 }
 
 async function main(): Promise<void> {

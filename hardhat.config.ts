@@ -17,6 +17,13 @@ const config: HardhatUserConfig = {
       url: process.env.AMOY_RPC_URL ?? "https://rpc-amoy.polygon.technology",
       chainId: 80002,
       accounts,
+      // Amoy's base fee is ~0 but RPC fee suggestions spike wildly (200+
+      // gwei tips) while blocks land fine at the ~25-30 gwei validator
+      // minimum. An explicit cap keeps faucet-funded deploys affordable;
+      // unset it to fall back to the RPC's suggestion.
+      ...(process.env.AMOY_GAS_PRICE_GWEI
+        ? { gasPrice: Number(process.env.AMOY_GAS_PRICE_GWEI) * 1e9 }
+        : {}),
     },
   },
   etherscan: {

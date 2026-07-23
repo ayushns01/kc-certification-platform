@@ -40,10 +40,15 @@ export class EthersChainClient implements IChainClient {
   /** In-process promise queue: serializes tx submission so nonces never race. */
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(rpcUrl: string, privateKey: string, contractAddress: string) {
+  /** Explicit legacy gasPrice for writes when a cap is configured — see
+   * AppConfig.gasPriceGwei (Amoy fee-suggestion spikes). Empty = RPC default. */
+  private readonly txOverrides: { gasPrice?: bigint };
+
+  constructor(rpcUrl: string, privateKey: string, contractAddress: string, gasPriceGwei?: number) {
     this.provider = new JsonRpcProvider(rpcUrl);
     this.wallet = new Wallet(privateKey, this.provider);
     this.contract = new Contract(contractAddress, ABI, this.wallet);
+    this.txOverrides = gasPriceGwei ? { gasPrice: BigInt(gasPriceGwei) * 1_000_000_000n } : {};
   }
 
   /** Runs `fn` only after every previously-queued call has settled (success or failure). */
@@ -64,6 +69,7 @@ export class EthersChainClient implements IChainClient {
         params.uri,
         params.metadataHash,
         params.recordId,
+        this.txOverrides,
       );
       const receipt = await tx.wait(1);
       if (!receipt) {
@@ -92,7 +98,7 @@ export class EthersChainClient implements IChainClient {
 
   async revoke(tokenId: number, reason: string): Promise<{ txHash: string }> {
     return this.enqueue(async () => {
-      const tx = await this.contract.revoke(tokenId, reason);
+      const tx = await this.contract.revoke(tokenId, reason, this.txOverrides);
       const receipt = await tx.wait(1);
       if (!receipt) {
         throw new Error("revoke transaction did not confirm");
