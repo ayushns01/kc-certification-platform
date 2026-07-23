@@ -24,8 +24,9 @@
  * invalidated by `refresh()`. This is NOT a multi-writer cache — per
  * docs/ARCHITECTURE.md the sheet has single-writer semantics in this
  * prototype (the backend process is the only writer; the admin only edits
- * the trigger cells `Status`/`PaymentRef`/`EmailStatus`, never the
- * write-back columns). `SheetSyncWorker`'s poll loop is what surfaces admin
+ * the command cells `Action`/`PaymentRef`/`EmailStatus` — never `Status`,
+ * which is write-back-only domain state, and never the other write-back
+ * columns; see workers/types.ts on command/state separation). `SheetSyncWorker`'s poll loop is what surfaces admin
  * edits — its cadence (`SHEET_POLL_INTERVAL_MS`) is effectively this
  * cache's refresh cadence for Registrations; callers that need to observe a
  * fresh admin edit sooner should call `refresh()` explicitly.
@@ -404,8 +405,14 @@ export class GoogleSheetsRepo implements IDataRepository {
 
   async findRegistration(email: string, workshopId: string): Promise<Registration | undefined> {
     const { rows } = await this.getTab(TAB_NAMES.REGISTRATIONS);
+    // Case-insensitive email match — must agree with MockJsonRepo's
+    // semantics so the duplicate-registration guard can't be defeated by a
+    // hand-entered mixed-case email in the sheet.
+    const wanted = email.toLowerCase();
     const row = rows.find(
-      (r) => cell(r, REGISTRATION_COLUMNS.EMAIL) === email && cell(r, REGISTRATION_COLUMNS.WORKSHOP_ID) === workshopId,
+      (r) =>
+        (cell(r, REGISTRATION_COLUMNS.EMAIL) ?? "").toLowerCase() === wanted &&
+        cell(r, REGISTRATION_COLUMNS.WORKSHOP_ID) === workshopId,
     );
     return row ? parseRegistrationRow(row) : undefined;
   }

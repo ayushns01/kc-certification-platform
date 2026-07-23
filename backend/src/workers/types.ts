@@ -36,11 +36,11 @@ export interface MintOutcome {
   tokenId?: number;
   certId?: string;
   verificationUrl?: string;
-  /** Mirrors domain MintStatus ("MINTED" | "FAILED" | ...). Never throws for
-   * an ordinary chain failure — CONSTRAINTS.md: "No fake success: chain failure →
-   * mintStatus: FAILED, retryable". Reserve thrown exceptions for genuinely
-   * unexpected errors (bad wiring, programmer error). */
-  mintStatus: string;
+  /** Never throws for an ordinary chain failure — CONSTRAINTS.md: "No fake
+   * success: chain failure → mintStatus: FAILED, retryable". Reserve thrown
+   * exceptions for rejected/illegal commands and genuinely unexpected
+   * errors (bad wiring, programmer error). */
+  mintStatus: "MINTED" | "FAILED";
   error?: string;
 }
 

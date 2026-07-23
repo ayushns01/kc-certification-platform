@@ -47,6 +47,13 @@ export function buildTestApp(
   const repo = new MockJsonRepo(storePath);
   const chainClient = new FakeChainClient();
   const config = buildTestConfig(overrides);
-  const app = createApp({ repo, chainClient, config, emailTransporter: extras.emailTransporter });
+  const noop = () => undefined;
+  const app = createApp({
+    repo,
+    chainClient,
+    config,
+    emailTransporter: extras.emailTransporter,
+    logger: { debug: noop, info: noop, warn: noop, error: noop },
+  });
   return { app, repo, chainClient, config, storePath };
 }

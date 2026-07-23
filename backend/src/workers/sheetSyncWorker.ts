@@ -183,6 +183,10 @@ export class SheetSyncWorker {
   // Action=APPROVE -> approve + auto-mint
   // -------------------------------------------------------------------
   private async handleApprove(row: SheetRowHandle, view: RegistrationRowView): Promise<void> {
+    // Capture the pre-command MintStatus so a THROWN (illegal/unexpected)
+    // command can restore it instead of inventing a failure state.
+    const priorMintStatus = row.get(REGISTRATION_COLUMNS.MINT_STATUS) ?? MINT_STATUS_VALUES.NONE;
+
     // Consume the command BEFORE any await: clear Action, mark MINTING.
     // Persisted via save() so any fresh fetch sees no pending command.
     row.set(REGISTRATION_COLUMNS.ACTION, REGISTRATION_ACTIONS.NONE);
@@ -197,11 +201,22 @@ export class SheetSyncWorker {
         registrationId: view.id,
         error: describeError(err),
       });
-      await this.writeMintFailure(row, describeError(err));
+      // A THROW means the command itself was rejected (e.g. APPROVE on a
+      // row that was never payment-verified) — no approval happened, so
+      // Status must NOT be touched. Under DATA_BACKEND=sheets the Status
+      // cell IS the domain state: writing APPROVED here would flip an
+      // unpaid registration into the approved state, block recordPayment
+      // forever, and open a mint-without-payment path via retry. Only the
+      // Error cell and the restored MintStatus are written.
+      row.set(REGISTRATION_COLUMNS.MINT_STATUS, priorMintStatus);
+      row.set(REGISTRATION_COLUMNS.ERROR, describeError(err));
+      await row.save();
       return;
     }
 
-    if (outcome.error || outcome.mintStatus === "FAILED") {
+    if (outcome.error || outcome.mintStatus === MINT_STATUS_VALUES.FAILED) {
+      // A FAILED outcome (no throw) means approval genuinely happened and
+      // only the chain mint failed — APPROVED is the true domain state.
       await this.writeMintFailure(row, outcome.error ?? "mint failed");
       return;
     }
@@ -219,6 +234,8 @@ export class SheetSyncWorker {
     await row.save();
   }
 
+  /** Only for FAILED outcomes (approval happened, mint didn't) — never for
+   * thrown commands, where no state transition occurred at all. */
   private async writeMintFailure(row: SheetRowHandle, error: string): Promise<void> {
     // Status write-back reflects the true domain state after a failed mint:
     // the registration IS approved, only the mint failed (no fake success,

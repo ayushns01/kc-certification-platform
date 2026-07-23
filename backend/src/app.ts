@@ -10,7 +10,7 @@ import type { AppConfig } from "./config";
 import type { IChainClient } from "./chain/types";
 import type { IDataRepository } from "./repositories/types";
 import { errorHandler } from "./middleware/errorHandler";
-import { logger } from "./lib/logger";
+import { logger as defaultLogger } from "./lib/logger";
 
 import { RegistrationService } from "./services/registrationService";
 import { PaymentService } from "./services/paymentService";
@@ -32,12 +32,15 @@ export interface AppDeps {
   config: AppConfig;
   /** Test-only: inject a transporter (e.g. one that throws) into EmailService. */
   emailTransporter?: Transporter;
+  /** Injectable for tests (noop keeps test output clean); defaults to the real logger. */
+  logger?: typeof defaultLogger;
 }
 
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.use(express.json());
 
+  const logger = deps.logger ?? defaultLogger;
   const emailService = new EmailService(deps.repo, deps.config, logger, deps.emailTransporter);
   const registrationService = new RegistrationService(deps.repo);
   const paymentService = new PaymentService(deps.repo);

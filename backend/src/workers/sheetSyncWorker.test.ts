@@ -188,22 +188,32 @@ describe("SheetSyncWorker", () => {
     expect(sheet.cell(0, REGISTRATION_COLUMNS.MINT_STATUS)).toBe(MINT_STATUS_VALUES.MINTED);
   });
 
-  it("does not crash the loop when approveAndMint throws unexpectedly; later rows still process", async () => {
+  it("a THROWN command records the error but never touches Status (no state corruption); later rows still process", async () => {
     const sheet = new FakeSheet();
-    sheet.addRow(approveCommandRow("reg_bad"));
+    // Simulates the dangerous case: admin types APPROVE on a row that was
+    // never payment-verified — the adapter rejects it with a throw.
+    sheet.addRow({
+      ...approveCommandRow("reg_bad"),
+      [REGISTRATION_COLUMNS.STATUS]: PARTICIPANT_STATUS.REGISTERED,
+    });
     sheet.addRow(approveCommandRow("reg_good"));
     const actions = fakeActions({
       approveAndMint: vi
         .fn()
-        .mockRejectedValueOnce(new Error("boom"))
+        .mockRejectedValueOnce(new Error("state is REGISTERED, expected PAYMENT_VERIFIED"))
         .mockResolvedValue(successOutcome({ certId: "cert_good" })),
     });
     const worker = buildWorker(sheet, actions);
 
     await worker.pollOnce();
 
-    expect(sheet.cell(0, REGISTRATION_COLUMNS.MINT_STATUS)).toBe(MINT_STATUS_VALUES.FAILED);
-    expect(sheet.cell(0, REGISTRATION_COLUMNS.ERROR)).toBe("boom");
+    // Status untouched — under the sheets backend this cell IS the domain
+    // state; writing APPROVED here would open a mint-without-payment path.
+    expect(sheet.cell(0, REGISTRATION_COLUMNS.STATUS)).toBe(PARTICIPANT_STATUS.REGISTERED);
+    // MintStatus restored to its pre-command value, not left on MINTING or
+    // marked FAILED (no mint was ever attempted).
+    expect(sheet.cell(0, REGISTRATION_COLUMNS.MINT_STATUS)).toBe(MINT_STATUS_VALUES.NONE);
+    expect(sheet.cell(0, REGISTRATION_COLUMNS.ERROR)).toContain("expected PAYMENT_VERIFIED");
     // Second row still processed in the same cycle.
     expect(sheet.cell(1, REGISTRATION_COLUMNS.CERT_ID)).toBe("cert_good");
   });

@@ -1,4 +1,5 @@
 import { Router, type Response } from "express";
+import { ValidationError } from "../domain/errors";
 import type { AppConfig } from "../config";
 import type { IDataRepository } from "../repositories/types";
 import type { PaymentService } from "../services/paymentService";
@@ -74,7 +75,7 @@ export function adminRouter(deps: AdminDeps): Router {
         res.status(200).json(summary);
         return;
       }
-      res.status(400).json({ error: "ValidationError", details: "registrationId or workshopId is required" });
+      throw new ValidationError("registrationId or workshopId is required");
     } catch (err) {
       next(err);
     }

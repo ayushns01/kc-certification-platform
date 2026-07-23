@@ -50,6 +50,18 @@ function isEmailMode(value: string): value is EmailMode {
   return value === "manual" || value === "auto";
 }
 
+/** Fail-fast numeric env parsing: `SHEET_POLL_INTERVAL_MS=15s` must die at
+ * boot with a clear message, not become NaN (setTimeout(fn, NaN) fires
+ * immediately — the worker would hot-loop against the Sheets API). */
+function requirePositiveInt(name: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === "") return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, got "${raw}"`);
+  }
+  return value;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   // Populate process.env from .env (no-op for keys already set, e.g. in CI).
   // Tests never call loadConfig() — they build an AppConfig literal directly.
@@ -101,17 +113,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataBackend: dataBackendRaw,
     googleSheetId: source.GOOGLE_SHEET_ID,
     googleServiceAccountKeyFile: source.GOOGLE_SERVICE_ACCOUNT_KEY_FILE,
-    sheetPollIntervalMs: Number(source.SHEET_POLL_INTERVAL_MS ?? 15000),
+    sheetPollIntervalMs: requirePositiveInt("SHEET_POLL_INTERVAL_MS", source.SHEET_POLL_INTERVAL_MS, 15000),
 
     emailMode: emailModeRaw,
     smtpHost: source.SMTP_HOST || undefined,
-    smtpPort: source.SMTP_PORT ? Number(source.SMTP_PORT) : undefined,
+    smtpPort: source.SMTP_PORT ? requirePositiveInt("SMTP_PORT", source.SMTP_PORT, 587) : undefined,
     smtpUser: source.SMTP_USER || undefined,
     smtpPass: source.SMTP_PASS || undefined,
     emailFrom: source.EMAIL_FROM || "Kalachain Certificates <certificates@kalachain.example>",
 
-    port: Number(source.PORT ?? 3000),
-    baseUrl: source.BASE_URL || `http://localhost:${Number(source.PORT ?? 3000)}`,
+    port: requirePositiveInt("PORT", source.PORT, 3000),
+    baseUrl: source.BASE_URL || `http://localhost:${requirePositiveInt("PORT", source.PORT, 3000)}`,
     adminApiKey,
   };
 }
