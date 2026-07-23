@@ -1,0 +1,108 @@
+# Kalachain demo — full Phase-1 + Phase-2 walkthrough.
+# Works with the VS Code "REST Client" extension or as curl crib notes.
+#
+# Prereqs (three terminals):
+#   1. npx hardhat node
+#   2. npm run deploy:local   (copy the printed address into CONTRACT_ADDRESS below / .env)
+#   3. NETWORK=local AMOY_RPC_URL=http://127.0.0.1:8545 \
+#      DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+#      CONTRACT_ADDRESS=<deployed address> DATA_BACKEND=json ADMIN_API_KEY=demo-key npm run dev
+#
+# (That private key is Hardhat's well-known dev account #0 — local use only.)
+
+@base = http://localhost:3000
+@adminKey = demo-key
+
+### 0. Seeded workshops
+GET {{base}}/api/workshops
+
+### ============ PHASE 1 — Participation Certificate ============
+
+### 1. Register a participant
+# → 201 { id, state: REGISTERED }   (copy the id into @regId below)
+POST {{base}}/api/registrations
+Content-Type: application/json
+
+{ "name": "Asha Rao", "email": "asha@example.com", "workshopId": "ws-101" }
+
+@regId = reg_PASTE_ME
+
+### 2. Record manual payment verification (admin)
+POST {{base}}/api/admin/registrations/{{regId}}/payment
+Content-Type: application/json
+x-api-key: {{adminKey}}
+
+{ "paymentRef": "UPI-8842", "verifiedBy": "admin@kalachain.org" }
+
+### 3. Approve → AUTO-MINTS the certificate in the same call
+# → 200 { state: CERT_MINTED, certificate: { certId, tokenId, txHash,
+#          verificationUrl, emailStatus: PENDING } }
+# Note emailStatus: PENDING — mint never sends email (assessment hard rule).
+POST {{base}}/api/admin/registrations/{{regId}}/approve
+x-api-key: {{adminKey}}
+
+@certId = cert_PASTE_ME
+
+### 4. Public verification — recomputes the metadata hash against the chain
+# → { verdict: VALID, onChainHash, recomputedHash, ... }
+# (open the same URL in a browser for the HTML page)
+GET {{base}}/verify/{{certId}}
+Accept: application/json
+
+### 5. Tamper demo (optional): edit any metadata value in
+#    backend/src/data/store.local.json, then re-run step 4 → verdict: TAMPERED
+
+### 6. Manually dispatch the certificate email (post-workshop, by design)
+# → { sent: 1, skipped: 0, failed: 0 }; re-run → { sent: 0, skipped: 1, ... }
+POST {{base}}/api/admin/emails/dispatch
+Content-Type: application/json
+x-api-key: {{adminKey}}
+
+{ "registrationId": "{{regId}}" }
+
+### ============ PHASE 2 — Evaluation Certificate ============
+
+### 7. Register for the Phase-2 workshop
+POST {{base}}/api/registrations
+Content-Type: application/json
+
+{ "name": "Meera Iyer", "email": "meera@example.com", "workshopId": "ws-201" }
+
+@p2RegId = reg_PASTE_ME
+
+### 8. Performance submission (mock LMS recording URL)
+POST {{base}}/api/submissions
+Content-Type: application/json
+
+{ "registrationId": "{{p2RegId}}", "recordingUrl": "https://lms.example.com/rec/771.mp4" }
+
+@subId = sub_PASTE_ME
+
+### 9. Evaluation draft (repeatable until finalize; grade is server-derived —
+#    adding a "grade" field here gets a 400)
+PUT {{base}}/api/admin/submissions/{{subId}}/evaluation
+Content-Type: application/json
+x-api-key: {{adminKey}}
+
+{
+  "evaluatorName": "Guru Meenakshi",
+  "marks": 87,
+  "parameters": { "rhythm": 9, "expression": 8, "technique": 9, "repertoire": 8 },
+  "comments": "Strong laya control; abhinaya can deepen.",
+  "audioFeedbackUrl": "https://cdn.example.com/feedback/771.mp3"
+}
+
+### 10. Finalize → mints the graded certificate
+# → 200 { state: FINALIZED, certificate: { certId, tokenId, txHash, ... } }
+POST {{base}}/api/admin/submissions/{{subId}}/finalize
+x-api-key: {{adminKey}}
+
+@p2CertId = cert_PASTE_ME
+
+### 11. Metadata — all mandated fields (participant, event, evaluator, marks,
+#     grade, parameters, comments, audio feedback URL, tx hash)
+GET {{base}}/api/metadata/{{p2CertId}}
+
+### 12. Verify the graded certificate
+GET {{base}}/verify/{{p2CertId}}
+Accept: application/json

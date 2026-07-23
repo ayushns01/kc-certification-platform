@@ -43,17 +43,38 @@ docs/               Requirements, architecture, plan, API spec
 3. [Implementation Plan](docs/PLAN.md) — milestones with acceptance criteria
 4. [API Spec](docs/API.md) — endpoints, payloads, status codes
 
-## Quick Start (once implemented)
+## Quick Start (10 minutes, zero external accounts)
 
 ```bash
 npm install
-npx hardhat test                 # contract tests
-npx hardhat node                 # local chain
-npm run deploy:local             # deploy contract locally
-npm run dev                      # start backend
+npx hardhat test        # 14 contract tests
+npm test                # 66 API/worker tests (mock chain + mock store)
 ```
 
-Deploy to Amoy: set `AMOY_RPC_URL`, `DEPLOYER_PRIVATE_KEY` in `.env`, then `npm run deploy:amoy`.
+Full live demo against a local chain (three terminals):
+
+```bash
+npx hardhat node                                  # T1: local chain
+npm run deploy:local                              # T2: prints CONTRACT_ADDRESS
+NETWORK=local AMOY_RPC_URL=http://127.0.0.1:8545 \
+DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+CONTRACT_ADDRESS=<from deploy> DATA_BACKEND=json \
+ADMIN_API_KEY=demo-key npm run dev                # T3: API server
+```
+
+Then walk [demo.http](demo.http) top to bottom: register → verify payment →
+**approve auto-mints on-chain** → `/verify` shows **VALID** via the on-chain
+hash → email stays **PENDING** until manually dispatched → Phase-2
+evaluation mints a graded certificate with every mandated metadata field.
+(That private key is Hardhat's well-known dev account #0 — local use only.)
+
+**Sheets mode** (the JD-aligned admin flow — flip a cell, get a mint):
+follow [docs/SHEETS-SETUP.md](docs/SHEETS-SETUP.md), set
+`DATA_BACKEND=sheets`, run `npm run dev` + `npm run worker`.
+
+Deploy to Amoy: set `AMOY_RPC_URL`, `DEPLOYER_PRIVATE_KEY` (a throwaway,
+faucet-funded key) in `.env`, then `npm run deploy:amoy` — the script
+auto-verifies on Polygonscan when `POLYGONSCAN_API_KEY` is set.
 
 ## Future Work (deliberately out of scope)
 
