@@ -104,11 +104,12 @@ normally touched again.
 | Name | auto | Participant name |
 | Email | auto | |
 | Phase | auto | `1` or `2` |
-| **Status** | **in** | See workflow below. Values: `REGISTERED`, `PAYMENT_VERIFIED`, `APPROVED`, `CERT_MINTED`, `EMAIL_SENT` (plus the transient `MINTING` the worker itself writes — never set this by hand) |
-| **PaymentRef** | **in** | Fill in before flipping Status to `PAYMENT_VERIFIED` |
+| **Action** | **in** | **The admin's command cell** — the only trigger for payment/approval. Enter `VERIFY_PAYMENT` or `APPROVE`; the worker consumes it (clears the cell) and acts. Commands and state are deliberately separate columns: `Status` mirrors the state the services validate against, so using it as the trigger would make every transition collide with its own precondition (see ARCHITECTURE.md) |
+| Status | out | Write-back only — mirrors the domain state: `REGISTERED`, `PAYMENT_VERIFIED`, `APPROVED`, `CERT_MINTED`, `EMAIL_SENT`. **Never edit by hand** |
+| **PaymentRef** | **in** | Fill in before entering `Action=VERIFY_PAYMENT` |
 | **PaymentVerifiedBy** | **in** | Optional — who verified the payment; defaults to `sheet-admin` if left blank |
-| **EmailStatus** | **in / out** | Worker sets `PENDING` after a successful mint; admin flips it to `SEND` to trigger dispatch; worker sets `SENT` when done |
-| MintStatus | out | `NONE` / `MINTING` / `MINTED` / `FAILED` |
+| **EmailStatus** | **in / out** | Worker sets `PENDING` after a successful mint; admin flips it to `SEND` to trigger dispatch; worker consumes `SEND` back to `PENDING`, dispatches, then writes `SENT` |
+| MintStatus | out | `NONE` / `MINTING` (in-progress marker) / `MINTED` / `FAILED` |
 | MintError | out | Reserved for service-level detail (currently mirrored into `Error`) |
 | CertID | out | Set once minted |
 | TxHash | out | Transaction hash from the mint receipt |
@@ -151,28 +152,32 @@ normally touched again.
 
 ## 6. The admin workflow — which cells to touch
 
-This is the whole demo, cell by cell:
+This is the whole demo, cell by cell. The admin only ever types into three
+cells: `Action`, `PaymentRef`, and `EmailStatus`.
 
 1. **Record payment**: on a `REGISTERED` row, fill in `PaymentRef` (and
-   optionally `PaymentVerifiedBy`), then set `Status` to `PAYMENT_VERIFIED`.
+   optionally `PaymentVerifiedBy`), then enter `Action=VERIFY_PAYMENT`.
+   Next poll: the worker consumes the command, records the payment, and
+   writes `Status=PAYMENT_VERIFIED` back.
 2. **Approve** (auto-mints — CONSTRAINTS.md constraint: mint happens in the same
-   logical operation as approval): set `Status` to `APPROVED`. Within one
-   poll interval the worker flips it to the transient `MINTING` marker, mints
-   the certificate, then writes back `TxHash`, `TokenID`,
-   `VerificationLink`, sets `Status` to `CERT_MINTED`, and sets `EmailStatus`
-   to `PENDING`. If the mint fails, `Status` reverts to `APPROVED` and
-   `Error`/`MintStatus` explain why — safe to leave as-is (it will retry
-   next poll) or investigate.
+   logical operation as approval): enter `Action=APPROVE`. Within one poll
+   interval the worker consumes the command, marks `MintStatus=MINTING`,
+   mints, then writes back `Status=CERT_MINTED`, `CertID`, `TxHash`,
+   `TokenID`, `VerificationLink`, and `EmailStatus=PENDING`. If the mint
+   fails, `Status` shows `APPROVED` (the true domain state) with
+   `MintStatus=FAILED` and the reason in `Error` — re-enter `Action=APPROVE`
+   to retry (the platform maps it to an idempotent mint retry; it can never
+   double-mint).
 3. **Send the certificate email** (manual, on purpose — CONSTRAINTS.md constraint:
    mint never sends email): set `EmailStatus` to `SEND`. Next poll, the
-   worker dispatches it and sets `EmailStatus` to `SENT`.
-4. **Never hand-edit** `TxHash`, `TokenID`, `VerificationLink`, `CertID`,
-   `MintStatus`, or `Error` — these are write-back only and will be
-   overwritten by the next action anyway.
-5. **Errors are visible, not swallowed**: a bad row (missing `PaymentRef`, a
-   service rejecting an illegal transition, a chain RPC hiccup) writes a
-   message to `Error` and leaves the row in a retryable state; it never
-   crashes the worker or silently drops the row.
+   worker dispatches it and writes `SENT`. On an SMTP failure it returns to
+   `PENDING` with the reason in `Error` — re-enter `SEND` to retry.
+4. **Never hand-edit** `Status`, `TxHash`, `TokenID`, `VerificationLink`,
+   `CertID`, `MintStatus`, or `Error` — these are write-back only.
+5. **Errors are visible, not swallowed**: a bad row (missing `PaymentRef`,
+   a service rejecting an illegal transition, a chain RPC hiccup) writes a
+   message to `Error`, consumes the command, and leaves the row retryable;
+   it never crashes the worker or silently drops the row.
 
 ## 7. How the demo looks (5 steps)
 
@@ -180,12 +185,12 @@ This is the whole demo, cell by cell:
    (`npm run worker`).
 2. Add a row to Registrations (or use the REST API to register a
    participant) with `Status=REGISTERED`.
-3. Fill `PaymentRef=DEMO-001`, set `Status=PAYMENT_VERIFIED` — watch the log
-   line confirming the payment was recorded.
-4. Set `Status=APPROVED` — within `SHEET_POLL_INTERVAL_MS`, watch `Status`
-   flash to `MINTING`, then land on `CERT_MINTED` with `TxHash` and
-   `VerificationLink` populated. Open the Polygonscan link from `TxHash` to
-   show the on-chain transaction.
+3. Fill `PaymentRef=DEMO-001`, enter `Action=VERIFY_PAYMENT` — watch the
+   command disappear and `Status` land on `PAYMENT_VERIFIED`.
+4. Enter `Action=APPROVE` — within `SHEET_POLL_INTERVAL_MS`, watch
+   `MintStatus` flash to `MINTING`, then `Status` land on `CERT_MINTED` with
+   `CertID`, `TxHash`, and `VerificationLink` populated. Open the
+   Polygonscan link from `TxHash` to show the on-chain transaction.
 5. Set `EmailStatus=SEND` — watch it flip to `SENT`, then open
    `VerificationLink` to show the public verification page reporting
    **VALID**.
@@ -197,10 +202,14 @@ This is the whole demo, cell by cell:
   `ensureSheetStructure()` (the backend does this automatically on first
   connect) or check the sheet was shared with the exact `client_email` from
   the key file.
-- **Nothing happens after editing Status**: check the worker process is
+- **Nothing happens after entering an Action**: check the worker process is
   actually running (`npm run worker`) and `SHEET_POLL_INTERVAL_MS` hasn't
-  been set absurdly high; check its logs for a per-row `Error`.
-- **A row seems "stuck" on MINTING**: an unexpected (non-chain) error during
-  the mint call. Check the worker logs and the row's `Error` cell — the
-  worker resets `Status` back to `APPROVED` on any failure, chain-related or
-  not, so it should never stay on `MINTING` past one poll cycle.
+  been set absurdly high; check its logs for a per-row `Error`. An unknown
+  command value (typo) is consumed and reported in `Error`.
+- **A row seems "stuck" on MINTING**: the worker was stopped mid-mint. On
+  its next poll it detects the stranded marker (MINTING + no TxHash + no
+  pending command) and marks it `FAILED` with an "interrupted" message —
+  re-enter `Action=APPROVE` to retry. If the mint actually landed on-chain
+  before the crash, the backend's startup reconciliation heals the record
+  from chain events instead; the retry can never double-mint either way
+  (on-chain `mintedFor` guard).
