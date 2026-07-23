@@ -75,17 +75,24 @@ Grade is **derived server-side** from marks (P2-3), never client-supplied.
 Lock evaluation + mint graded certificate (P2-4). Same `200/202/409` contract
 as approve. `409` if already finalized.
 
+### `POST /api/admin/submissions/:id/retry-mint` 🔒
+Retry a failed Phase-2 mint (mirrors the Phase-1 retry contract, including
+the chain-heal path). Idempotent — `409` if already minted.
+
 ## Shared
 
-### `GET /api/metadata/:tokenId`
+### `GET /api/metadata/:tokenIdOrCertId`
 ERC-721 metadata JSON (`tokenURI` target). Includes `attributes` +
 full `kalachain` domain block (all mandated fields for evaluation certs).
+Accepts a numeric token ID **or** a `cert_…` ID — the on-chain `tokenURI`
+must be committed before the token ID exists, so the chain points at the
+certId form; both resolve to the identical document.
 
 ### `GET /verify/:certId`
 Public verification (P1-6, P2-5). HTML page; `Accept: application/json` for:
 ```json
 {
-  "verdict": "VALID | TAMPERED | NOT_FOUND",
+  "verdict": "VALID | TAMPERED | REVOKED | NOT_FOUND",
   "certType": "PARTICIPATION | EVALUATION",
   "tokenId": 1,
   "txHash": "0x...",

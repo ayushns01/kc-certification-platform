@@ -178,7 +178,7 @@ Single `ChainClient` wrapper around Ethers.js v6:
 - One signer, **sequential tx submission** (simple in-process queue) to avoid
   nonce races when approvals arrive concurrently.
 - Waits for 1 confirmation, persists `{txHash, tokenId, blockNumber}` from the
-  receipt (token ID parsed from the `Transfer` event).
+  receipt (token ID parsed from the `CertificateMinted` event).
 - Failures are caught and recorded as `mintStatus: FAILED` with the error;
   a retry endpoint re-attempts idempotently (guard: never mint twice for the
   same record — checked both in DB and by a `mintedFor(recordId)` mapping
