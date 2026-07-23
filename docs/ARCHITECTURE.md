@@ -28,22 +28,38 @@ update to the blockchain minting process" — so the Sheet is treated as the
 ```
 Google Sheet (admin UI)          Sync Worker                    Chain
 ┌───────────────────────┐ poll  ┌──────────────────────┐ mint  ┌─────────┐
-│ Name │ Email │ Status │──────▶│ detect Status change  │──────▶│ SBT     │
-│      write-back cols  │◀──────│ → mint → write back   │       └─────────┘
-│ TxHash │ VerifyLink   │       │ txHash/tokenId/link   │
-│ EmailStatus           │       └──────────────────────┘
+│ Name │ Email │ Action │──────▶│ read Action commands  │──────▶│ SBT     │
+│      write-back cols  │◀──────│ → service call →      │       └─────────┘
+│ Status │ TxHash │ ... │       │ write back state/tx   │
+│ EmailStatus │ Error   │       └──────────────────────┘
 └───────────────────────┘
 ```
 
-- **`SheetSyncWorker`** polls the sheet (~15s interval; Sheets offers no
-  native push without Apps Script — polling is the honest, locally demo-able
-  choice). It maps row `Status` transitions onto the same service-layer state
-  machine the REST API uses; the sheet never bypasses transition validation.
-- **Write-back columns** (`TxHash`, `TokenId`, `VerificationLink`,
-  `EmailStatus`, `Error`) make the sheet self-documenting for admins.
+- **Command/state separation.** The admin edits exactly three cells:
+  `Action` (`VERIFY_PAYMENT` | `APPROVE`), `PaymentRef`, and
+  `EmailStatus=SEND`. `Status` is **write-back only** — it mirrors the
+  domain state owned by the service layer. This is what keeps the promise
+  "the sheet never bypasses transition validation": if the sheet's Status
+  cell itself were the trigger, flipping it to `APPROVED` would *pre-set*
+  the state the service is about to validate against, and every transition
+  would self-collide. Commands and state must be separate columns.
+- **`SheetSyncWorker`** polls (~15s; Sheets offers no native push without
+  Apps Script — polling is the honest, locally demo-able choice), reads
+  pending `Action` values, and calls the same service-layer state machine
+  the REST API uses (via an injected `WorkflowActions` adapter, wired at
+  bootstrap). The adapter resolves retries: `APPROVE` on a row that is
+  already `APPROVED` with a failed mint maps to retry-mint, not a 409.
+- **Write-back columns** (`Status`, `MintStatus`, `TxHash`, `TokenId`,
+  `CertID`, `VerificationLink`, `EmailStatus`, `Error`) make the sheet
+  self-documenting for admins.
 - **Idempotency matters doubly here**: a poll cycle can overlap a slow tx.
-  The worker marks a row `MINTING` before submitting and the on-chain
-  `mintedFor` guard backstops any race.
+  The worker synchronously clears `Action` and sets `MintStatus=MINTING`
+  before any await, so an overlapping poll sees no pending command; the
+  on-chain `mintedFor` guard backstops any race. A row stranded on
+  `MINTING` with no `TxHash` (crash mid-mint) is detected on a later poll
+  and marked `FAILED` + `Error="interrupted"` so the admin can re-trigger;
+  startup reconciliation heals it instead if the mint actually landed
+  on-chain.
 - **Repository interface, two implementations**: `GoogleSheetsRepo`
   (service-account auth via `google-spreadsheet`) and `MockJsonRepo`
   (default — zero-setup for reviewers). Selected by `DATA_BACKEND` env var.
@@ -195,8 +211,9 @@ AMOY_RPC_URL=
 DEPLOYER_PRIVATE_KEY=
 CONTRACT_ADDRESS=
 DATA_BACKEND=json | sheets
-GOOGLE_SHEET_ID=                 # sheets backend only
-GOOGLE_SERVICE_ACCOUNT_JSON=     # path to service-account key file
+GOOGLE_SHEET_ID=                     # sheets backend only
+GOOGLE_SERVICE_ACCOUNT_KEY_FILE=     # path to service-account key JSON
+SHEET_POLL_INTERVAL_MS=15000
 EMAIL_MODE=manual | auto         # assessment: manual; JD production: auto
 ADMIN_API_KEY=                   # guards admin routes (stand-in for real auth)
 BASE_URL=                        # used to build metadata + verification links

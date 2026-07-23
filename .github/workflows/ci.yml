@@ -15,6 +15,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Compile contracts (generates typechain types needed by typecheck)
+        run: npx hardhat compile
       - name: Typecheck
         run: npm run build
       - name: Contract tests (Hardhat)

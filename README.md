@@ -38,6 +38,7 @@ docs/               Requirements, architecture, plan, API spec
 ## Documentation
 
 1. [Requirements](docs/REQUIREMENTS.md) — the assignment decomposed into testable requirements
+0. [Google Sheets setup](docs/SHEETS-SETUP.md) — service account, template columns, admin workflow
 2. [Architecture](docs/ARCHITECTURE.md) — system design, state machines, contract design, key decisions
 3. [Implementation Plan](docs/PLAN.md) — milestones with acceptance criteria
 4. [API Spec](docs/API.md) — endpoints, payloads, status codes
