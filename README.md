@@ -38,10 +38,11 @@ docs/               Requirements, architecture, plan, API spec
 ## Documentation
 
 1. [Requirements](docs/REQUIREMENTS.md) — the assignment decomposed into testable requirements
-0. [Google Sheets setup](docs/SHEETS-SETUP.md) — service account, template columns, admin workflow
-2. [Architecture](docs/ARCHITECTURE.md) — system design, state machines, contract design, key decisions
-3. [Implementation Plan](docs/PLAN.md) — milestones with acceptance criteria
-4. [API Spec](docs/API.md) — endpoints, payloads, status codes
+2. [Walkthrough](docs/WALKTHROUGH.md) — step-by-step curl commands for Phase 1 + Phase 2 flows
+3. [Google Sheets setup](docs/SHEETS-SETUP.md) — service account, template columns, admin workflow
+4. [Architecture](docs/ARCHITECTURE.md) — system design, state machines, contract design, key decisions
+5. [Implementation Plan](docs/PLAN.md) — milestones with acceptance criteria
+6. [API Spec](docs/API.md) — endpoints, payloads, status codes
 
 ## Quick Start (10 minutes, zero external accounts)
 
@@ -95,6 +96,18 @@ Deployment record: [deployments/amoy.json](deployments/amoy.json).
 > Gas note: Amoy RPC fee suggestions spike to 200+ gwei tips while
 > validators accept ~30 gwei — `AMOY_GAS_PRICE_GWEI=30` caps writes so a
 > single faucet grant covers deploy + mints (see `.env.example`).
+
+## Design Decisions
+
+**Sheets as command bus, not state store.** The `Action` column is write-once by the admin and consumed (cleared) by the worker before any side-effect fires. `Status` is write-back only — the worker never reads it to make decisions. This separates intent from observed state, making the sync loop idempotent and crash-safe: a restart re-reads only unconsumed commands.
+
+**Chain is source of truth, not the database.** On startup, the backend replays all `CertificateMinted` events from the contract and heals any write-backs lost to a crash. A certificate that exists on-chain will always be reconciled into the local store — the database is a projection, not the record of truth.
+
+**Double-mint guard lives on-chain.** `mintedFor(bytes32 recordId)` in the contract maps `keccak256(certId)` → tokenId and reverts on collision. This means even if the backend crashes mid-write and retries, the EVM prevents a second token from being issued — the guard cannot be bypassed by a race condition or a bug in the service layer.
+
+**Sequential tx queue over parallelism.** A single promise queue serialises all write transactions through the one deployer key. Concurrent approvals are safe because each tx waits for the previous receipt before submitting — no nonce speculation, no dropped transactions under load.
+
+**State machine enforced at the service boundary.** Every workflow transition is validated before execution; illegal transitions (approve before payment, double-evaluate) return `409` with the current state in the body. There are no silent no-ops.
 
 ## Future Work (deliberately out of scope)
 
