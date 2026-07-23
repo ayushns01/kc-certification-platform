@@ -98,8 +98,10 @@ can revise before anything hits the chain (chain writes are irreversible).
   transfer where `from != address(0)` → **soulbound**. `approve` /
   `setApprovalForAll` also revert.
 - `CertType { PARTICIPATION, EVALUATION }` stored per token.
-- `mintCertificate(address to, CertType t, string uri, bytes32 metadataHash)`
+- `mintCertificate(address to, uint8 certType, string uri, bytes32 metadataHash, bytes32 recordId)`
   restricted to `MINTER_ROLE` (AccessControl). Backend signer holds the role.
+  `recordId` (keccak256 of the certificate's public ID) feeds the on-chain
+  `mintedFor` double-mint guard.
 - **`metadataHash`** = keccak256 of the canonicalized (sorted-key, no-whitespace)
   metadata JSON, stored on-chain. This is the tamper-evidence anchor: the
   off-chain JSON can be re-hashed and compared at verification time.
