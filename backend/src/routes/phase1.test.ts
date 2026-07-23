@@ -55,7 +55,7 @@ describe("Phase 1: registration -> payment -> approve -> auto-mint -> email disp
       .set("x-api-key", TEST_ADMIN_API_KEY)
       .send({ registrationId });
     expect(dispatchRes.status).toBe(200);
-    expect(dispatchRes.body).toEqual({ sent: 1, skipped: 0 });
+    expect(dispatchRes.body).toEqual({ sent: 1, skipped: 0, failed: 0 });
 
     const afterDispatch = await harness.repo.getRegistration(registrationId);
     expect(afterDispatch?.emailStatus).toBe("SENT");
@@ -210,13 +210,55 @@ describe("Phase 1: registration -> payment -> approve -> auto-mint -> email disp
       .post("/api/admin/emails/dispatch")
       .set("x-api-key", TEST_ADMIN_API_KEY)
       .send({ registrationId });
-    expect(firstDispatch.body).toEqual({ sent: 1, skipped: 0 });
+    expect(firstDispatch.body).toEqual({ sent: 1, skipped: 0, failed: 0 });
 
     const secondDispatch = await request(harness.app)
       .post("/api/admin/emails/dispatch")
       .set("x-api-key", TEST_ADMIN_API_KEY)
       .send({ registrationId });
-    expect(secondDispatch.body).toEqual({ sent: 0, skipped: 1 });
+    expect(secondDispatch.body).toEqual({ sent: 0, skipped: 1, failed: 0 });
+  });
+
+  it("reports an SMTP failure as failed (not skipped) and leaves the email PENDING for retry", async () => {
+    const failingHarness = buildTestApp(
+      {},
+      {
+        emailTransporter: {
+          sendMail: vi.fn().mockRejectedValue(new Error("SMTP connection refused")),
+        } as never,
+      },
+    );
+    const regRes = await request(failingHarness.app)
+      .post("/api/registrations")
+      .send({ name: "Asha Rao", email: "smtp-fail@example.com", workshopId: WORKSHOP_ID });
+    const registrationId = regRes.body.id;
+    await request(failingHarness.app)
+      .post(`/api/admin/registrations/${registrationId}/payment`)
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send({ paymentRef: "ref", verifiedBy: "admin" });
+    await request(failingHarness.app)
+      .post(`/api/admin/registrations/${registrationId}/approve`)
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send();
+
+    const dispatch = await request(failingHarness.app)
+      .post("/api/admin/emails/dispatch")
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send({ registrationId });
+    expect(dispatch.status).toBe(200);
+    expect(dispatch.body).toEqual({ sent: 0, skipped: 0, failed: 1 });
+
+    // PENDING is preserved so a later dispatch can retry safely.
+    const stored = await failingHarness.repo.getRegistration(registrationId);
+    expect(stored?.emailStatus).toBe("PENDING");
+  });
+
+  it("rejects a client-supplied phase that mismatches the workshop's phase", async () => {
+    const res = await request(harness.app)
+      .post("/api/registrations")
+      .send({ name: "Asha Rao", email: "phase-mismatch@example.com", workshopId: WORKSHOP_ID, phase: 2 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Phase mismatch/);
   });
 
   it("supports bulk email dispatch for a workshop", async () => {

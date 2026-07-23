@@ -5,6 +5,7 @@
  * process.env or real network/mail infrastructure.
  */
 import express, { type Express } from "express";
+import type { Transporter } from "nodemailer";
 import type { AppConfig } from "./config";
 import type { IChainClient } from "./chain/types";
 import type { IDataRepository } from "./repositories/types";
@@ -29,13 +30,15 @@ export interface AppDeps {
   repo: IDataRepository;
   chainClient: IChainClient;
   config: AppConfig;
+  /** Test-only: inject a transporter (e.g. one that throws) into EmailService. */
+  emailTransporter?: Transporter;
 }
 
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.use(express.json());
 
-  const emailService = new EmailService(deps.repo, deps.config, logger);
+  const emailService = new EmailService(deps.repo, deps.config, logger, deps.emailTransporter);
   const registrationService = new RegistrationService(deps.repo);
   const paymentService = new PaymentService(deps.repo);
   const approvalService = new ApprovalService(deps.repo, deps.chainClient, deps.config, emailService);

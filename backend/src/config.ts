@@ -82,8 +82,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     if (!source.CONTRACT_ADDRESS) throw new Error(`CONTRACT_ADDRESS is required when NETWORK=${networkRaw}`);
   }
 
-  if (dataBackendRaw === "sheets" && !source.GOOGLE_SHEET_ID) {
-    throw new Error("GOOGLE_SHEET_ID is required when DATA_BACKEND=sheets");
+  if (dataBackendRaw === "sheets") {
+    if (!source.GOOGLE_SHEET_ID) {
+      throw new Error("GOOGLE_SHEET_ID is required when DATA_BACKEND=sheets");
+    }
+    if (!source.GOOGLE_SERVICE_ACCOUNT_KEY_FILE) {
+      throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY_FILE is required when DATA_BACKEND=sheets");
+    }
   }
 
   return {

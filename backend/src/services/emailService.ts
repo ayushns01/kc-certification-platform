@@ -19,6 +19,7 @@ import { NotFoundError } from "../domain/errors";
 export interface DispatchSummary {
   sent: number;
   skipped: number;
+  failed: number;
 }
 
 export class EmailService {
@@ -28,14 +29,18 @@ export class EmailService {
     private readonly repo: IDataRepository,
     private readonly config: AppConfig,
     private readonly logger: Logger,
+    /** Test-only injection point; production wiring always omits this and gets the config-driven transport below. */
+    transporter?: Transporter,
   ) {
-    this.transporter = config.smtpHost
-      ? nodemailer.createTransport({
-          host: config.smtpHost,
-          port: config.smtpPort ?? 587,
-          auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass } : undefined,
-        })
-      : nodemailer.createTransport({ jsonTransport: true });
+    this.transporter =
+      transporter ??
+      (config.smtpHost
+        ? nodemailer.createTransport({
+            host: config.smtpHost,
+            port: config.smtpPort ?? 587,
+            auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass } : undefined,
+          })
+        : nodemailer.createTransport({ jsonTransport: true }));
   }
 
   private buildMessage(reg: Registration) {
@@ -56,7 +61,7 @@ export class EmailService {
     const reg = await this.repo.getRegistration(registrationId);
     if (!reg) throw new NotFoundError(`Unknown registration: ${registrationId}`);
     if (reg.emailStatus !== "PENDING") {
-      return { sent: 0, skipped: 1 };
+      return { sent: 0, skipped: 1, failed: 0 };
     }
     return this.sendAndMark(reg);
   }
@@ -64,7 +69,7 @@ export class EmailService {
   /** Bulk dispatch: all PENDING registrations for a workshop. Idempotent per-registration. */
   async dispatchAll(workshopId: string): Promise<DispatchSummary> {
     const regs = await this.repo.listRegistrations({ workshopId });
-    const summary: DispatchSummary = { sent: 0, skipped: 0 };
+    const summary: DispatchSummary = { sent: 0, skipped: 0, failed: 0 };
     for (const reg of regs) {
       if (reg.emailStatus !== "PENDING") {
         summary.skipped += 1;
@@ -73,6 +78,7 @@ export class EmailService {
       const result = await this.sendAndMark(reg);
       summary.sent += result.sent;
       summary.skipped += result.skipped;
+      summary.failed += result.failed;
     }
     return summary;
   }
@@ -85,11 +91,11 @@ export class EmailService {
       reg.updatedAt = new Date().toISOString();
       await this.repo.updateRegistration(reg);
       this.logger.info("email_sent", { registrationId: reg.id, email: reg.email });
-      return { sent: 1, skipped: 0 };
+      return { sent: 1, skipped: 0, failed: 0 };
     } catch (err) {
       // Leaves emailStatus PENDING so a later dispatch call can safely retry.
       this.logger.error("email_send_failed", { registrationId: reg.id, err });
-      return { sent: 0, skipped: 1 };
+      return { sent: 0, skipped: 0, failed: 1 };
     }
   }
 }

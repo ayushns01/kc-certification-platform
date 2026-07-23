@@ -13,6 +13,7 @@ import type {
   MintResult,
   OnChainCertificate,
 } from "./types";
+import { ChainUnavailableError } from "../domain/errors";
 
 function fakeTxHash(): string {
   return `0x${randomBytes(32).toString("hex")}`;
@@ -26,6 +27,17 @@ export class FakeChainClient implements IChainClient {
 
   private failNextMint = false;
   private failAlwaysMint = false;
+  private chainDown = false;
+
+  /**
+   * Test hook: simulate an unreachable chain (RPC down / bad address).
+   * Mirrors EthersChainClient, which throws ChainUnavailableError in this
+   * situation rather than answering — so tests can prove verification
+   * returns 503, never a verdict, when the chain can't be queried.
+   */
+  setChainDown(down: boolean): void {
+    this.chainDown = down;
+  }
 
   /** Test hook: make the very next mintCertificate() call throw, then reset. */
   setFailNextMint(fail = true): void {
@@ -88,6 +100,9 @@ export class FakeChainClient implements IChainClient {
   }
 
   async getCertificate(tokenId: number): Promise<OnChainCertificate> {
+    if (this.chainDown) {
+      throw new ChainUnavailableError("Simulated chain outage: RPC unreachable");
+    }
     return this.certsByToken.get(tokenId) ?? { exists: false };
   }
 

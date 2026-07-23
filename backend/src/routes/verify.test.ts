@@ -63,4 +63,45 @@ describe("GET /verify/:certId", () => {
     expect(res.text).toContain("VALID");
     expect(res.text).toContain("<html");
   });
+
+  it("returns REVOKED after the issuer revokes the token (JSON and HTML badge)", async () => {
+    const certId = await mintOneCertificate(harness);
+    await harness.chainClient.revoke(1, "issued in error");
+
+    const jsonRes = await request(harness.app).get(`/verify/${certId}`).set("Accept", "application/json");
+    expect(jsonRes.status).toBe(200);
+    expect(jsonRes.body.verdict).toBe("REVOKED");
+
+    const htmlRes = await request(harness.app).get(`/verify/${certId}`);
+    expect(htmlRes.status).toBe(200);
+    expect(htmlRes.text).toContain("REVOKED");
+  });
+
+  it("returns NOT_FOUND when the record's token does not exist on-chain", async () => {
+    const certId = await mintOneCertificate(harness);
+
+    // Simulate a record pointing at a token the chain has no knowledge of.
+    const cert = await harness.repo.getCertificate(certId);
+    cert!.tokenId = 999;
+    await harness.repo.updateCertificate(cert!);
+
+    const res = await request(harness.app).get(`/verify/${certId}`).set("Accept", "application/json");
+    expect(res.status).toBe(200);
+    expect(res.body.verdict).toBe("NOT_FOUND");
+  });
+
+  it("returns 503 (never a verdict) when the chain cannot be queried", async () => {
+    const certId = await mintOneCertificate(harness);
+    harness.chainClient.setChainDown(true);
+
+    const res = await request(harness.app).get(`/verify/${certId}`).set("Accept", "application/json");
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("chain unavailable");
+    expect(res.body.verdict).toBeUndefined();
+
+    // Chain restored → verification works again, proving the 503 was honest, not sticky.
+    harness.chainClient.setChainDown(false);
+    const recovered = await request(harness.app).get(`/verify/${certId}`).set("Accept", "application/json");
+    expect(recovered.body.verdict).toBe("VALID");
+  });
 });

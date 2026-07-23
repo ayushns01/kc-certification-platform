@@ -30,3 +30,25 @@ export class NotFoundError extends Error {
     this.name = "NotFoundError";
   }
 }
+
+/** Thrown for request-shape problems not caught by zod (e.g. cross-field business rules). Maps to 400. */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
+/**
+ * Thrown when the chain cannot be reached/queried at all (RPC down, bad
+ * CONTRACT_ADDRESS, etc.) — distinct from a token genuinely not existing
+ * on-chain. Verification must never treat "can't tell" as "valid"; this
+ * maps to 503 so a network blip can never be misread as a tamper-check
+ * pass. See services/verificationService.ts.
+ */
+export class ChainUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChainUnavailableError";
+  }
+}

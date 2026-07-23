@@ -5,12 +5,22 @@
  */
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
-import { ConflictError, IllegalTransitionError, NotFoundError } from "../domain/errors";
+import {
+  ChainUnavailableError,
+  ConflictError,
+  IllegalTransitionError,
+  NotFoundError,
+  ValidationError,
+} from "../domain/errors";
 import { logger } from "../lib/logger";
 
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof ZodError) {
     res.status(400).json({ error: "ValidationError", details: err.issues });
+    return;
+  }
+  if (err instanceof ValidationError) {
+    res.status(400).json({ error: err.message });
     return;
   }
   if (err instanceof IllegalTransitionError) {
@@ -23,6 +33,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
   if (err instanceof NotFoundError) {
     res.status(404).json({ error: err.message });
+    return;
+  }
+  if (err instanceof ChainUnavailableError) {
+    res.status(503).json({ error: "chain unavailable", details: err.message });
     return;
   }
 

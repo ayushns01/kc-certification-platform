@@ -7,6 +7,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import type { Transporter } from "nodemailer";
 import { createApp } from "../app";
 import type { AppConfig } from "../config";
 import type { IDataRepository } from "../repositories/types";
@@ -37,12 +38,15 @@ export interface TestHarness {
   storePath: string;
 }
 
-export function buildTestApp(overrides: Partial<AppConfig> = {}): TestHarness {
+export function buildTestApp(
+  overrides: Partial<AppConfig> = {},
+  extras: { emailTransporter?: Transporter } = {},
+): TestHarness {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kalachain-test-"));
   const storePath = path.join(tmpDir, "store.local.json");
   const repo = new MockJsonRepo(storePath);
   const chainClient = new FakeChainClient();
   const config = buildTestConfig(overrides);
-  const app = createApp({ repo, chainClient, config });
+  const app = createApp({ repo, chainClient, config, emailTransporter: extras.emailTransporter });
   return { app, repo, chainClient, config, storePath };
 }

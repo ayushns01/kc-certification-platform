@@ -110,10 +110,22 @@ export class SubmissionService {
         `Cannot finalize: submission ${submissionId} is ${sub.state}, expected EVALUATED`,
       );
     }
+    // Double-mint guard for the crash window: once a mint has been ATTEMPTED
+    // (MINTING persisted, then process died / chain failed), state is still
+    // EVALUATED but a certId already exists. Re-running finalize here with a
+    // fresh generateCertId() would sidestep the on-chain mintedFor guard
+    // (keyed on certId) and mint a second token — so recovery goes through
+    // retry-mint, which reuses the certId and heals from chain state.
+    if (sub.mintStatus === "MINTING" || sub.mintStatus === "FAILED") {
+      throw new ConflictError(
+        `Submission ${submissionId} already has a mint attempt (mintStatus ${sub.mintStatus}); ` +
+          `use POST /api/admin/submissions/${submissionId}/retry-mint`,
+      );
+    }
 
     const { reg, workshop } = await this.loadContext(sub);
 
-    const certId = generateCertId();
+    const certId = sub.certId ?? generateCertId();
     sub.mintStatus = "MINTING";
     sub.certId = certId;
     sub.updatedAt = new Date().toISOString();

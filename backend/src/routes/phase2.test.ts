@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { buildTestApp, TEST_ADMIN_API_KEY, type TestHarness } from "../testSupport/buildTestApp";
 
@@ -177,5 +177,60 @@ describe("Phase 2: submission -> evaluation -> finalize -> auto-mint", () => {
       .send();
     expect(retryRes.status).toBe(200);
     expect(retryRes.body.state).toBe("FINALIZED");
+  });
+
+  it("re-calling finalize after a mint attempt is 409 and can never double-mint (crash-window guard)", async () => {
+    const { submissionId } = await registerAndSubmit(harness, "p2-crash-window@example.com");
+    await request(harness.app)
+      .put(`/api/admin/submissions/${submissionId}/evaluation`)
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send({
+        evaluatorName: "Guru Meenakshi",
+        marks: 82,
+        parameters: { rhythm: 8 },
+        comments: "good",
+        audioFeedbackUrl: "https://cdn.example.com/feedback/1.mp3",
+      });
+
+    // First attempt fails on-chain → state stays EVALUATED, mintStatus FAILED, certId persisted.
+    harness.chainClient.setFailNextMint(true);
+    const firstAttempt = await request(harness.app)
+      .post(`/api/admin/submissions/${submissionId}/finalize`)
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send();
+    expect(firstAttempt.status).toBe(202);
+    const subAfterFail = await harness.repo.getSubmission(submissionId);
+    const certIdAfterFail = subAfterFail?.certId;
+    expect(certIdAfterFail).toMatch(/^cert_/);
+
+    // Re-calling finalize must 409 toward retry-mint — a fresh generateCertId()
+    // here would bypass the on-chain mintedFor guard (keyed on certId).
+    const mintSpy = vi.spyOn(harness.chainClient, "mintCertificate");
+    const secondFinalize = await request(harness.app)
+      .post(`/api/admin/submissions/${submissionId}/finalize`)
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send();
+    expect(secondFinalize.status).toBe(409);
+    expect(secondFinalize.body.error).toContain("retry-mint");
+    expect(mintSpy).not.toHaveBeenCalled();
+
+    // Simulated lost write-back (crash while MINTING): finalize still refuses.
+    const sub = await harness.repo.getSubmission(submissionId);
+    sub!.mintStatus = "MINTING";
+    await harness.repo.updateSubmission(sub!);
+    const thirdFinalize = await request(harness.app)
+      .post(`/api/admin/submissions/${submissionId}/finalize`)
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send();
+    expect(thirdFinalize.status).toBe(409);
+
+    // Recovery path: retry-mint reuses the SAME certId — exactly one token minted.
+    const retry = await request(harness.app)
+      .post(`/api/admin/submissions/${submissionId}/retry-mint`)
+      .set("x-api-key", TEST_ADMIN_API_KEY)
+      .send();
+    expect(retry.status).toBe(200);
+    expect(retry.body.certificate.certId).toBe(certIdAfterFail);
+    expect(mintSpy).toHaveBeenCalledTimes(1);
   });
 });

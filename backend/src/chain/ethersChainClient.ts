@@ -13,6 +13,7 @@ import type {
   MintResult,
   OnChainCertificate,
 } from "./types";
+import { ChainUnavailableError } from "../domain/errors";
 
 const ABI = [
   "function mintCertificate(address to, uint8 certType, string uri, bytes32 metadataHash, bytes32 recordId) external returns (uint256)",
@@ -24,6 +25,11 @@ const ABI = [
   "function ownerOf(uint256 tokenId) external view returns (address)",
   "event CertificateMinted(uint256 indexed tokenId, bytes32 indexed recordId, uint8 certType, bytes32 metadataHash)",
   "event CertificateRevoked(uint256 indexed tokenId, string reason)",
+  // OZ v5 ERC721's standard "token doesn't exist" custom error. Declaring it
+  // here lets ethers decode ownerOf() reverts for nonexistent tokens so we
+  // can tell "no such token" apart from "couldn't reach the chain at all" —
+  // see getCertificate()/isNonexistentTokenError() below.
+  "error ERC721NonexistentToken(uint256 tokenId)",
 ];
 
 export class EthersChainClient implements IChainClient {
@@ -100,9 +106,32 @@ export class EthersChainClient implements IChainClient {
     return Number(result);
   }
 
+  /**
+   * ethers v6 decodes a revert against the declared ABI errors: a
+   * CALL_EXCEPTION whose decoded name is ERC721NonexistentToken means the
+   * chain answered and the token genuinely isn't there. Anything else (RPC
+   * down, wrong CONTRACT_ADDRESS, undecodable revert) is "couldn't tell" —
+   * which must NEVER be collapsed into "doesn't exist", or verification
+   * would report a verdict it has no evidence for.
+   */
+  private isNonexistentTokenError(err: unknown): boolean {
+    const e = err as { code?: string; revert?: { name?: string } | null };
+    return e?.code === "CALL_EXCEPTION" && e?.revert?.name === "ERC721NonexistentToken";
+  }
+
   async getCertificate(tokenId: number): Promise<OnChainCertificate> {
+    let owner: string;
     try {
-      const owner: string = await this.contract.ownerOf(tokenId);
+      owner = await this.contract.ownerOf(tokenId);
+    } catch (err) {
+      if (this.isNonexistentTokenError(err)) {
+        return { exists: false };
+      }
+      throw new ChainUnavailableError(
+        `Could not read token ${tokenId} on-chain: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
       const [metadataHash, certType, revoked] = await Promise.all([
         this.contract.metadataHashOf(tokenId) as Promise<string>,
         this.contract.certTypeOf(tokenId) as Promise<bigint | number>,
@@ -115,8 +144,10 @@ export class EthersChainClient implements IChainClient {
         metadataHash,
         revoked,
       };
-    } catch {
-      return { exists: false };
+    } catch (err) {
+      throw new ChainUnavailableError(
+        `Token ${tokenId} exists but its certificate state could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

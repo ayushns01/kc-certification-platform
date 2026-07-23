@@ -33,9 +33,11 @@ function renderMetadataRows(metadata?: Record<string, unknown>): string {
 
 export function renderVerifyHtml(result: VerificationResult, certId: string): string {
   const badge = BADGE_STYLE[result.verdict];
-  const explorerLink = result.explorerUrl?.startsWith("http")
+  // explorerUrl is always a real URL when present; explorerNote carries the
+  // no-public-explorer explanation on local networks.
+  const explorerLink = result.explorerUrl
     ? `<a href="${escapeHtml(result.explorerUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(result.explorerUrl)}</a>`
-    : escapeHtml(result.explorerUrl ?? "");
+    : escapeHtml(result.explorerNote ?? "");
 
   return `<!doctype html>
 <html lang="en">
