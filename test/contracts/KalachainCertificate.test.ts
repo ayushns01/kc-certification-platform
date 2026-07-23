@@ -2,6 +2,8 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { keccak256, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
+import type { Log } from "ethers";
+import type { KalachainCertificate } from "../../typechain-types";
 
 const PARTICIPATION = 0;
 const EVALUATION = 1;
@@ -19,7 +21,7 @@ describe("KalachainCertificate", () => {
     const [deployer, minter, issuer, recipient, other, stranger] = await ethers.getSigners();
 
     const factory = await ethers.getContractFactory("KalachainCertificate");
-    const contract = await factory.deploy();
+    const contract = (await factory.deploy()) as unknown as KalachainCertificate;
     await contract.waitForDeployment();
 
     // Grant separate accounts their roles so role-gating tests are meaningful
@@ -60,7 +62,7 @@ describe("KalachainCertificate", () => {
       // Sanity-check the event log directly too.
       const iface = contract.interface;
       const parsed = receipt1!.logs
-        .map((l) => {
+        .map((l: Log) => {
           try {
             return iface.parseLog(l);
           } catch {
