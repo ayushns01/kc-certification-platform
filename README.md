@@ -53,3 +53,14 @@ npm run dev                      # start backend
 ```
 
 Deploy to Amoy: set `AMOY_RPC_URL`, `DEPLOYER_PRIVATE_KEY` in `.env`, then `npm run deploy:amoy`.
+
+## Future Work (deliberately out of scope)
+
+- **W3C Verifiable Credentials companion** — for wallet-portable credentials
+  interoperable with other institutions, each SBT could be paired with a
+  signed VC (e.g., via Veramo), the on-chain token serving as the
+  revocation/anchor layer. The current keccak256 metadata anchor already
+  provides tamper-evidence within the assessment's mandated ERC-721 stack.
+- IPFS metadata pinning, real payment gateway, participant wallet
+  onboarding, job queues — documented trade-offs in
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md).
