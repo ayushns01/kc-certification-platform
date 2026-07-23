@@ -40,6 +40,10 @@ describe("KalachainCertificate", () => {
       const hash1 = metadataHash("cert-1");
       const uri1 = "https://api.kalachain.example/api/metadata/1";
 
+      // "0 = not minted" is the agreed semantic for mintedFor — assert it
+      // holds before any mint has happened for this recordId.
+      expect(await contract.mintedFor(rec1)).to.equal(0);
+
       const tx1 = await contract.connect(minter).mintCertificate(recipient.address, PARTICIPATION, uri1, hash1, rec1);
       const receipt1 = await tx1.wait();
 
@@ -202,6 +206,25 @@ describe("KalachainCertificate", () => {
       await expect(contract.connect(issuer).revoke(999, "no such token"))
         .to.be.revertedWithCustomError(contract, "CertificateDoesNotExist")
         .withArgs(999);
+    });
+
+    it("does not burn on revoke — ownership and metadata survive intact (audit trail)", async () => {
+      const { contract, minter, issuer, recipient } = await loadFixture(deployFixture);
+      const rec = recordId("no-burn");
+      const hash = metadataHash("no-burn");
+      const uri = "https://api.kalachain.example/api/metadata/no-burn";
+
+      await contract.connect(minter).mintCertificate(recipient.address, EVALUATION, uri, hash, rec);
+      await contract.connect(issuer).revoke(1, "certificate revoked for cause");
+
+      // The token still exists, is still owned by the original recipient,
+      // and its metadata is untouched — revocation is a status flag, not a
+      // burn, so the on-chain record of "this was issued" remains visible.
+      expect(await contract.ownerOf(1)).to.equal(recipient.address);
+      expect(await contract.tokenURI(1)).to.equal(uri);
+      expect(await contract.metadataHashOf(1)).to.equal(hash);
+      expect(await contract.certTypeOf(1)).to.equal(EVALUATION);
+      expect(await contract.isRevoked(1)).to.equal(true);
     });
   });
 
