@@ -8,6 +8,7 @@ import { loadConfig, type AppConfig } from "./config";
 import type { IDataRepository } from "./repositories/types";
 import type { IChainClient } from "./chain/types";
 import { MockJsonRepo } from "./repositories/mockJsonRepo";
+import { GoogleSheetsRepo } from "./repositories/googleSheetsRepo";
 import { EthersChainClient } from "./chain/ethersChainClient";
 import { reconcile } from "./services/reconciliationService";
 import { logger } from "./lib/logger";
@@ -16,22 +17,12 @@ function buildRepo(config: AppConfig): IDataRepository {
   if (config.dataBackend === "json") {
     return new MockJsonRepo(path.join(__dirname, "data", "store.local.json"));
   }
-
-  // Sheets backend is built in parallel by another agent. Lazy `require`
-  // behind a try/catch so a missing repositories/googleSheetsRepo.ts never
-  // breaks compilation of this file — it only fails at runtime, with a
-  // clear message, if DATA_BACKEND=sheets is actually selected before that
-  // file exists.
-  try {
-    const mod = require("./repositories/googleSheetsRepo");
-    const GoogleSheetsRepo = mod.GoogleSheetsRepo ?? mod.default;
-    return new GoogleSheetsRepo(config);
-  } catch (err) {
-    throw new Error(
-      "DATA_BACKEND=sheets requires backend/src/repositories/googleSheetsRepo.ts, which is not available yet: " +
-        (err instanceof Error ? err.message : String(err)),
-    );
-  }
+  // config.loadConfig() fail-fasts when DATA_BACKEND=sheets without
+  // GOOGLE_SHEET_ID / GOOGLE_SERVICE_ACCOUNT_KEY_FILE, so both are set here.
+  return new GoogleSheetsRepo({
+    sheetId: config.googleSheetId!,
+    keyFile: config.googleServiceAccountKeyFile,
+  });
 }
 
 function buildChainClient(config: AppConfig): IChainClient {
@@ -46,6 +37,9 @@ function buildChainClient(config: AppConfig): IChainClient {
 async function main(): Promise<void> {
   const config = loadConfig();
   const repo = buildRepo(config);
+  if (repo instanceof GoogleSheetsRepo) {
+    await repo.ensureSheetStructure();
+  }
   const chainClient = buildChainClient(config);
 
   try {

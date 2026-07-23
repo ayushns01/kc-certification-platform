@@ -5,7 +5,7 @@
   "description": "Blockchain-enabled certification platform: soulbound ERC-721 certificates on Polygon with a Google-Sheets-driven mint pipeline",
   "scripts": {
     "dev": "ts-node backend/src/server.ts",
-    "worker": "ts-node backend/src/workers/sheetSyncWorker.ts",
+    "worker": "ts-node backend/src/workers/main.ts",
     "build": "tsc --noEmit",
     "test": "vitest run",
     "test:contracts": "hardhat test",
