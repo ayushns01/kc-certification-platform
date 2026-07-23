@@ -2,7 +2,6 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { keccak256, toUtf8Bytes, ZeroAddress, ZeroHash } from "ethers";
-import type { Log } from "ethers";
 import type { KalachainCertificate } from "../../typechain-types";
 
 const PARTICIPATION = 0;
@@ -47,7 +46,7 @@ describe("KalachainCertificate", () => {
       expect(await contract.mintedFor(rec1)).to.equal(0);
 
       const tx1 = await contract.connect(minter).mintCertificate(recipient.address, PARTICIPATION, uri1, hash1, rec1);
-      const receipt1 = await tx1.wait();
+      await tx1.wait();
 
       expect(await contract.ownerOf(1)).to.equal(recipient.address);
       expect(await contract.tokenURI(1)).to.equal(uri1);
@@ -58,23 +57,6 @@ describe("KalachainCertificate", () => {
       await expect(tx1)
         .to.emit(contract, "CertificateMinted")
         .withArgs(1, rec1, PARTICIPATION, hash1);
-
-      // Sanity-check the event log directly too.
-      const iface = contract.interface;
-      const parsed = receipt1!.logs
-        .map((l: Log) => {
-          try {
-            return iface.parseLog(l);
-          } catch {
-            return null;
-          }
-        })
-        .find((l) => l?.name === "CertificateMinted");
-      expect(parsed).to.not.be.null;
-      expect(parsed!.args.tokenId).to.equal(1n);
-      expect(parsed!.args.recordId).to.equal(rec1);
-      expect(parsed!.args.certType).to.equal(PARTICIPATION);
-      expect(parsed!.args.metadataHash).to.equal(hash1);
 
       // Second mint (different recordId) gets tokenId 2.
       const rec2 = recordId("cert-2");
@@ -150,25 +132,26 @@ describe("KalachainCertificate", () => {
 
   describe("access control", () => {
     it("reverts mint from a non-MINTER account", async () => {
-      const { contract, stranger, recipient } = await loadFixture(deployFixture);
+      const { contract, stranger, recipient, MINTER_ROLE } = await loadFixture(deployFixture);
       await expect(
         contract
           .connect(stranger)
           .mintCertificate(recipient.address, PARTICIPATION, "uri", metadataHash("no-role"), recordId("no-role")),
-      ).to.be.revertedWithCustomError(contract, "AccessControlUnauthorizedAccount");
+      )
+        .to.be.revertedWithCustomError(contract, "AccessControlUnauthorizedAccount")
+        .withArgs(stranger.address, MINTER_ROLE);
     });
 
     it("reverts revoke from a non-ISSUER account", async () => {
-      const { contract, minter, stranger, recipient } = await loadFixture(deployFixture);
+      const { contract, minter, stranger, recipient, ISSUER_ROLE } = await loadFixture(deployFixture);
       const rec = recordId("revoke-role");
       await contract
         .connect(minter)
         .mintCertificate(recipient.address, PARTICIPATION, "uri", metadataHash("revoke-role"), rec);
 
-      await expect(contract.connect(stranger).revoke(1, "not allowed")).to.be.revertedWithCustomError(
-        contract,
-        "AccessControlUnauthorizedAccount",
-      );
+      await expect(contract.connect(stranger).revoke(1, "not allowed"))
+        .to.be.revertedWithCustomError(contract, "AccessControlUnauthorizedAccount")
+        .withArgs(stranger.address, ISSUER_ROLE);
     });
   });
 
@@ -255,6 +238,15 @@ describe("KalachainCertificate", () => {
         contract
           .connect(minter)
           .mintCertificate(recipient.address, PARTICIPATION, "uri", ZeroHash, recordId("zero-hash")),
+      ).to.be.revertedWithCustomError(contract, "InvalidMintParams");
+    });
+
+    it("reverts minting with a zero recordId", async () => {
+      const { contract, minter, recipient } = await loadFixture(deployFixture);
+      await expect(
+        contract
+          .connect(minter)
+          .mintCertificate(recipient.address, PARTICIPATION, "uri", metadataHash("zero-record"), ZeroHash),
       ).to.be.revertedWithCustomError(contract, "InvalidMintParams");
     });
   });

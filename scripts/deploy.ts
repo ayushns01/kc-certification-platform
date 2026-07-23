@@ -55,6 +55,9 @@ async function main() {
   const deploymentsDir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(deploymentsDir, { recursive: true });
 
+  // Re-running this script against the same network intentionally
+  // overwrites deployments/<network>.json with the new address/tx/deployer
+  // — the file always reflects the most recent deploy, not a history.
   const outFile = path.join(deploymentsDir, `${network.name}.json`);
   const record = {
     address,

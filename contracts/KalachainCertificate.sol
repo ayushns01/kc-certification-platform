@@ -100,9 +100,15 @@ contract KalachainCertificate is ERC721URIStorage, AccessControl {
     /// @param to Recipient address; must be non-zero.
     /// @param certType 0 = PARTICIPATION, 1 = EVALUATION.
     /// @param uri Token metadata URI (served by the backend's /api/metadata/:tokenId).
+    /// Stored explicitly per token via ERC721URIStorage rather than derived
+    /// from a shared baseURI + tokenId: certType/metadataHash/URI are set
+    /// together at mint time, so an explicit URI keeps them consistent even
+    /// if the backend's metadata route path scheme changes later, at the
+    /// cost of one extra SSTORE per mint versus a baseURI-only scheme.
     /// @param metadataHash keccak256 of the off-chain metadata JSON; must be non-zero.
-    /// @param recordId keccak256 of the off-chain certificate record id; used as the
-    /// double-mint guard key.
+    /// @param recordId keccak256 of the off-chain certificate record id; must be
+    /// non-zero (0 is reserved by `mintedFor` to mean "not yet minted") and is
+    /// used as the double-mint guard key.
     /// @return tokenId The newly minted token id (starts at 1, increments by 1).
     function mintCertificate(address to, uint8 certType, string calldata uri, bytes32 metadataHash, bytes32 recordId)
         external
@@ -112,6 +118,7 @@ contract KalachainCertificate is ERC721URIStorage, AccessControl {
         if (to == address(0)) revert InvalidMintParams();
         if (certType > MAX_CERT_TYPE) revert InvalidMintParams();
         if (metadataHash == bytes32(0)) revert InvalidMintParams();
+        if (recordId == bytes32(0)) revert InvalidMintParams();
         if (mintedFor[recordId] != 0) revert AlreadyMinted(recordId);
 
         tokenId = _nextTokenId++;
@@ -155,8 +162,10 @@ contract KalachainCertificate is ERC721URIStorage, AccessControl {
     /// the only state transition allowed; any transfer between two non-zero
     /// addresses reverts, enforcing the soulbound property at the lowest
     /// level so it cannot be bypassed via transferFrom/safeTransferFrom or
-    /// any future override. Burns are also disabled since no code path
-    /// calls `_update` with `to == address(0)` on an existing token.
+    /// any future override. Burns are also structurally blocked by the same
+    /// check: burning an existing token always has a non-zero `from` (its
+    /// current owner), so `from != address(0)` reverts regardless of `to` —
+    /// even a future `_burn` call or override would still hit this guard.
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
         address from = _ownerOf(tokenId);
         if (from != address(0)) revert NonTransferable();
